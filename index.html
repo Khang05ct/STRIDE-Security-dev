@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chiến lược bảo mật MiniShop - STRIDE & Mitigations</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body { 
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+
+        .glass-card:hover:not(.dimmed) {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .dimmed {
+            opacity: 0.2;
+            filter: grayscale(100%);
+            pointer-events: none;
+        }
+
+        .active-threat {
+            box-shadow: 0 0 20px var(--glow-color);
+            border-color: var(--glow-color);
+            background: rgba(30, 41, 59, 0.95);
+            transform: scale(1.05);
+            z-index: 20;
+        }
+
+        .active-mitigation {
+            box-shadow: 0 0 15px var(--glow-color);
+            border-color: var(--glow-color);
+            background: rgba(30, 41, 59, 0.95);
+            transform: translateX(-10px);
+            z-index: 20;
+        }
+
+        /* SVG Line Animation */
+        .path-line {
+            stroke-dasharray: 2000;
+            stroke-dashoffset: 2000;
+            animation: drawLine 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            stroke-linecap: round;
+        }
+
+        @keyframes drawLine {
+            to { stroke-dashoffset: 0; }
+        }
+        
+        #svg-container {
+            pointer-events: none;
+        }
+
+        /* Details Panel Transition */
+        #details-panel {
+            transition: all 0.5s ease-in-out;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+        
+        #details-panel.show {
+            max-height: 1000px;
+            opacity: 1;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+    </style>
+</head>
+<body class="min-h-screen relative flex flex-col">
+
+    <header class="py-6 text-center z-20 bg-slate-900/90 backdrop-blur-md sticky top-0 border-b border-slate-700/50">
+        <h1 class="text-3xl md:text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">
+            <i class="fas fa-shield-halved text-cyan-400 mr-3"></i>Chiến lược bảo mật MiniShop
+        </h1>
+        <p class="text-slate-400 text-sm md:text-base">Mô hình STRIDE & 10 Danh mục Mitigation. Click vào Mối đe dọa để xem ví dụ.</p>
+        <button id="resetBtn" class="mt-4 px-5 py-2 bg-slate-700 hover:bg-slate-600 rounded-full text-sm font-medium transition-all opacity-0 pointer-events-none shadow-lg">
+            <i class="fas fa-undo mr-2"></i>Bỏ chọn tất cả
+        </button>
+    </header>
+
+    <main class="flex-grow w-full max-w-7xl mx-auto px-4 py-8 flex flex-col">
+        
+        <div class="relative w-full flex flex-col md:flex-row justify-between items-stretch gap-8 mb-8" id="workspace">
+            <!-- Lớp phủ SVG -->
+            <svg id="svg-container" class="absolute top-0 left-0 w-full h-full z-10"></svg>
+
+            <!-- Cột trái: 6 Threats -->
+            <div class="w-full md:w-1/3 flex flex-col gap-4 z-20" id="threats-col">
+                <h2 class="text-lg font-bold text-slate-300 border-b border-slate-700 pb-2 text-center md:text-left">6 Mối Đe Dọa (STRIDE)</h2>
+                
+                <div class="glass-card rounded-xl p-4 threat-item" id="spoofing" data-color="#ef4444">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-red-500/20 p-3 rounded-lg text-red-400 w-12 h-12 flex items-center justify-center"><i class="fas fa-user-secret text-xl"></i></div>
+                        <div>
+                            <h3 class="font-bold text-red-400">1. Spoofing</h3>
+                            <p class="text-[11px] text-slate-400">Giả mạo danh tính (User/Admin)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-xl p-4 threat-item" id="tampering" data-color="#f97316">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-orange-500/20 p-3 rounded-lg text-orange-400 w-12 h-12 flex items-center justify-center"><i class="fas fa-tools text-xl"></i></div>
+                        <div>
+                            <h3 class="font-bold text-orange-400">2. Tampering</h3>
+                            <p class="text-[11px] text-slate-400">Can thiệp, sửa đổi dữ liệu</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-xl p-4 threat-item" id="repudiation" data-color="#eab308">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-yellow-500/20 p-3 rounded-lg text-yellow-400 w-12 h-12 flex items-center justify-center"><i class="fas fa-file-signature text-xl"></i></div>
+                        <div>
+                            <h3 class="font-bold text-yellow-400">3. Repudiation</h3>
+                            <p class="text-[11px] text-slate-400">Chối bỏ hành vi, giao dịch</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-xl p-4 threat-item" id="info_disclosure" data-color="#a855f7">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-purple-500/20 p-3 rounded-lg text-purple-400 w-12 h-12 flex items-center justify-center"><i class="fas fa-unlock-alt text-xl"></i></div>
+                        <div>
+                            <h3 class="font-bold text-purple-400">4. Info Disclosure</h3>
+                            <p class="text-[11px] text-slate-400">Lộ lọt thông tin nhạy cảm</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-xl p-4 threat-item" id="dos" data-color="#3b82f6">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-blue-500/20 p-3 rounded-lg text-blue-400 w-12 h-12 flex items-center justify-center"><i class="fas fa-ban text-xl"></i></div>
+                        <div>
+                            <h3 class="font-bold text-blue-400">5. Denial of Service</h3>
+                            <p class="text-[11px] text-slate-400">Từ chối dịch vụ, gián đoạn</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-xl p-4 threat-item" id="eop" data-color="#22c55e">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-green-500/20 p-3 rounded-lg text-green-400 w-12 h-12 flex items-center justify-center"><i class="fas fa-arrow-up text-xl"></i></div>
+                        <div>
+                            <h3 class="font-bold text-green-400">6. Elevation of Privilege</h3>
+                            <p class="text-[11px] text-slate-400">Nâng quyền trái phép</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Không gian giữa cho Desktop -->
+            <div class="hidden md:block w-2/12 z-0"></div>
+
+            <!-- Cột phải: 10 Mitigations -->
+            <div class="w-full md:w-4/12 flex flex-col gap-2 z-20" id="mitigations-col">
+                <h2 class="text-lg font-bold text-slate-300 border-b border-slate-700 pb-2 text-center md:text-right">10 Mitigations</h2>
+                
+                <!-- Items list -->
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="auth">
+                    <div><h3 class="font-semibold text-sm text-slate-200">1. Authentication</h3></div>
+                    <i class="fas fa-key text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="authz">
+                    <div><h3 class="font-semibold text-sm text-slate-200">2. Authorization</h3></div>
+                    <i class="fas fa-user-shield text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="session">
+                    <div><h3 class="font-semibold text-sm text-slate-200">3. Session Management</h3></div>
+                    <i class="fas fa-hourglass-half text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="input_val">
+                    <div><h3 class="font-semibold text-sm text-slate-200">4. Input Validation</h3></div>
+                    <i class="fas fa-filter text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="crypto">
+                    <div><h3 class="font-semibold text-sm text-slate-200">5. Cryptography</h3></div>
+                    <i class="fas fa-lock text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="sensitive_data">
+                    <div><h3 class="font-semibold text-sm text-slate-200">6. Sensitive Data</h3></div>
+                    <i class="fas fa-eye-slash text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="comm_sec">
+                    <div><h3 class="font-semibold text-sm text-slate-200">7. Comm. Security</h3></div>
+                    <i class="fas fa-network-wired text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="audit">
+                    <div><h3 class="font-semibold text-sm text-slate-200">8. Auditing & Logging</h3></div>
+                    <i class="fas fa-clipboard-list text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="exception">
+                    <div><h3 class="font-semibold text-sm text-slate-200">9. Exception Mgmt</h3></div>
+                    <i class="fas fa-exclamation-triangle text-slate-500 text-sm"></i>
+                </div>
+                <div class="glass-card rounded-xl py-2 px-4 mitigation-item flex items-center justify-between" id="config_mgt">
+                    <div><h3 class="font-semibold text-sm text-slate-200">10. Configuration Mgmt</h3></div>
+                    <i class="fas fa-cogs text-slate-500 text-sm"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bảng chi tiết (Details Panel) -->
+        <div id="details-panel" class="w-full bg-slate-800/80 backdrop-blur-lg border-t border-slate-600 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] px-6 md:px-10 z-30">
+            <div class="flex items-center gap-4 border-b border-slate-700 pb-4 mb-4">
+                <div id="dp-icon" class="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-slate-700 text-white"></div>
+                <div>
+                    <h2 id="dp-title" class="text-2xl font-bold text-white">Tiêu đề</h2>
+                    <p id="dp-desc" class="text-slate-400">Mô tả</p>
+                </div>
+            </div>
+            <h3 class="text-lg font-semibold mb-4 text-slate-200"><i class="fas fa-lightbulb text-yellow-400 mr-2"></i>Ví dụ thực tế & Giải pháp trên MiniShop:</h3>
+            <div id="dp-content" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Nội dung được sinh động bằng JS -->
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- Dữ liệu chi tiết cho MiniShop ---
+        const mitigationsData = {
+            'auth': {
+                name: 'Authentication (Xác thực)',
+                icon: 'fa-key',
+                issue: 'Kẻ tấn công dùng danh sách tài khoản rò rỉ (Credential Stuffing) để cố gắng đăng nhập.',
+                solution: 'Bắt buộc xác thực 2 lớp (MFA/OTP), băm mật khẩu bằng thuật toán an toàn như Argon2id.'
+            },
+            'authz': {
+                name: 'Authorization (Phân quyền)',
+                icon: 'fa-user-shield',
+                issue: 'Khách hàng đổi đường dẫn từ /api/user sang /api/admin để xem đơn hàng người khác (IDOR).',
+                solution: 'Triển khai RBAC, luôn kiểm tra userId trong JWT Token phải khớp với tài nguyên yêu cầu.'
+            },
+            'session': {
+                name: 'Session Management',
+                icon: 'fa-hourglass-half',
+                issue: 'Đánh cắp Cookie qua lỗ hổng XSS để mạo danh khách hàng thanh toán.',
+                solution: 'Thiết lập cờ HttpOnly, Secure, SameSite=Strict cho Session/Cookies.'
+            },
+            'input_val': {
+                name: 'Input Validation',
+                icon: 'fa-filter',
+                issue: 'Đổi tham số quantity: -1 khi đặt hàng, hoặc chèn mã SQL Injection vào thanh tìm kiếm.',
+                solution: 'Dùng Parameterized Queries, áp dụng Whitelist Validation (chỉ nhận số dương).'
+            },
+            'crypto': {
+                name: 'Cryptography',
+                icon: 'fa-lock',
+                issue: 'Dữ liệu thanh toán gửi sang VNPAY bị can thiệp sửa số tiền từ 1.000.000đ thành 10.000đ.',
+                solution: 'Sử dụng chữ ký số HMAC-SHA256 cho giao dịch, mã hóa dữ liệu nhạy cảm bằng AES-256.'
+            },
+            'sensitive_data': {
+                name: 'Sensitive Data Protection',
+                icon: 'fa-eye-slash',
+                issue: 'Vô tình lưu số thẻ tín dụng (CVV) hoặc mật khẩu dạng plain-text vào file log hệ thống.',
+                solution: 'Tuân thủ chuẩn PCI-DSS, Tokenization thẻ, áp dụng kỹ thuật Masking dữ liệu (098***123).'
+            },
+            'comm_sec': {
+                name: 'Communication Security',
+                icon: 'fa-network-wired',
+                issue: 'Khách hàng dùng Wi-Fi quán cà phê bị tấn công MitM đánh cắp mật khẩu.',
+                solution: 'Ép buộc sử dụng HTTPS (TLS 1.3), cấu hình HSTS, áp dụng Certificate Pinning trên Mobile.'
+            },
+            'audit': {
+                name: 'Auditing and Logging',
+                icon: 'fa-clipboard-list',
+                issue: 'Khách đặt mua đơn hàng giá trị lớn, sau đó chối bỏ rằng họ chưa từng đặt.',
+                solution: 'Ghi log chi tiết (IP, UTC, mã OTP xác nhận), bảo vệ file log ở chế độ Append-only.'
+            },
+            'exception': {
+                name: 'Exception Management',
+                icon: 'fa-exclamation-triangle',
+                issue: 'Lỗi Database trả về toàn bộ Stack trace chứa cấu trúc thư mục và phiên bản phần mềm.',
+                solution: 'Cấu hình Global Exception Filter, chỉ trả về thông báo lỗi chung chung kèm TraceId.'
+            },
+            'config_mgt': {
+                name: 'Configuration Management',
+                icon: 'fa-cogs',
+                issue: 'Lộ file .env chứa API Key, hoặc Bot spam vét cạn tồn kho trong đợt Flash Sale.',
+                solution: 'Quản lý key qua Secret Manager, tắt Debug trên Production, cấu hình Rate Limiting (WAF).'
+            }
+        };
+
+        const threatsData = {
+            'spoofing': {
+                title: 'Spoofing (Giả mạo danh tính)',
+                desc: 'Kẻ tấn công đóng giả làm khách hàng hợp lệ, quản trị viên, hoặc giả mạo hệ thống bên thứ ba.',
+                icon: 'fa-user-secret',
+                color: '#ef4444',
+                links: ['auth', 'session', 'comm_sec']
+            },
+            'tampering': {
+                title: 'Tampering (Can thiệp dữ liệu)',
+                desc: 'Chỉnh sửa trái phép dữ liệu trên đường truyền, trong Database, hoặc can thiệp thông số đơn hàng.',
+                icon: 'fa-tools',
+                color: '#f97316',
+                links: ['input_val', 'crypto', 'comm_sec', 'config_mgt']
+            },
+            'repudiation': {
+                title: 'Repudiation (Chối bỏ)',
+                desc: 'Người dùng hoặc hệ thống phủ nhận một hành động hoặc giao dịch đã thực hiện thành công.',
+                icon: 'fa-file-signature',
+                color: '#eab308',
+                links: ['audit', 'crypto']
+            },
+            'info_disclosure': {
+                title: 'Information Disclosure (Lộ lọt thông tin)',
+                desc: 'Rò rỉ thông tin mật, dữ liệu cá nhân khách hàng, hoặc lộ cấu trúc hệ thống qua thông báo lỗi.',
+                icon: 'fa-unlock-alt',
+                color: '#a855f7',
+                links: ['sensitive_data', 'comm_sec', 'crypto', 'exception']
+            },
+            'dos': {
+                title: 'Denial of Service (Từ chối dịch vụ)',
+                desc: 'Tấn công làm cạn kiệt tài nguyên (CPU, RAM, Băng thông) khiến MiniShop không thể phục vụ khách hàng.',
+                icon: 'fa-ban',
+                color: '#3b82f6',
+                links: ['input_val', 'config_mgt']
+            },
+            'eop': {
+                title: 'Elevation of Privilege (Nâng quyền)',
+                desc: 'Tài khoản có quyền hạn thấp (Khách hàng) tìm cách truy cập vào chức năng của quyền cao hơn (Admin).',
+                icon: 'fa-arrow-up',
+                color: '#22c55e',
+                links: ['authz', 'session', 'config_mgt']
+            }
+        };
+
+        // --- Core Application Logic ---
+        let activeThreatId = null;
+
+        const threatElements = document.querySelectorAll('.threat-item');
+        const mitigationElements = document.querySelectorAll('.mitigation-item');
+        const svgContainer = document.getElementById('svg-container');
+        const workspace = document.getElementById('workspace');
+        const resetBtn = document.getElementById('resetBtn');
+        const detailsPanel = document.getElementById('details-panel');
+
+        // DOM elements for Details Panel
+        const dpIcon = document.getElementById('dp-icon');
+        const dpTitle = document.getElementById('dp-title');
+        const dpDesc = document.getElementById('dp-desc');
+        const dpContent = document.getElementById('dp-content');
+
+        function drawConnection(startEl, endEl, color) {
+            const svgRect = svgContainer.getBoundingClientRect();
+            const startRect = startEl.getBoundingClientRect();
+            const endRect = endEl.getBoundingClientRect();
+
+            const isMobile = window.innerWidth < 768;
+
+            let startX, startY, endX, endY, controlX1, controlY1, controlX2, controlY2;
+
+            if (!isMobile) {
+                // Desktop: Vẽ ngang từ trái sang phải
+                startX = startRect.right - svgRect.left;
+                startY = startRect.top + (startRect.height / 2) - svgRect.top;
+                
+                endX = endRect.left - svgRect.left;
+                endY = endRect.top + (endRect.height / 2) - svgRect.top;
+
+                const distanceX = Math.abs(endX - startX);
+                const controlPointOffset = Math.max(distanceX / 2.5, 40);
+
+                controlX1 = startX + controlPointOffset;
+                controlY1 = startY;
+                controlX2 = endX - controlPointOffset;
+                controlY2 = endY;
+            } else {
+                // Mobile: Vẽ dọc từ trên xuống dưới
+                startX = startRect.left + (startRect.width / 2) - svgRect.left;
+                startY = startRect.bottom - svgRect.top;
+                
+                endX = endRect.left + (endRect.width / 2) - svgRect.left;
+                endY = endRect.top - svgRect.top;
+
+                const distanceY = Math.abs(endY - startY);
+                const controlPointOffset = Math.max(distanceY / 2.5, 30);
+
+                controlX1 = startX;
+                controlY1 = startY + controlPointOffset;
+                controlX2 = endX;
+                controlY2 = endY - controlPointOffset;
+            }
+
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            const d = `M ${startX} ${startY} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${endX} ${endY}`;
+            
+            path.setAttribute("d", d);
+            path.setAttribute("fill", "none");
+            path.setAttribute("stroke", color);
+            path.setAttribute("stroke-width", "2.5");
+            path.setAttribute("class", "path-line");
+            path.style.filter = `drop-shadow(0 0 5px ${color})`;
+
+            svgContainer.appendChild(path);
+        }
+
+        function updateDetailsPanel(threatId) {
+            if (!threatId) {
+                detailsPanel.classList.remove('show');
+                return;
+            }
+
+            const threat = threatsData[threatId];
+            
+            // Cập nhật Header của Panel
+            dpIcon.innerHTML = `<i class="fas ${threat.icon}"></i>`;
+            dpIcon.style.color = threat.color;
+            dpIcon.style.boxShadow = `0 0 15px ${threat.color}40`;
+            
+            dpTitle.textContent = threat.title;
+            dpTitle.style.color = threat.color;
+            dpDesc.textContent = threat.desc;
+
+            // Xóa nội dung cũ
+            dpContent.innerHTML = '';
+
+            // Sinh nội dung Mitigation examples
+            threat.links.forEach(mitId => {
+                const mit = mitigationsData[mitId];
+                
+                const card = document.createElement('div');
+                card.className = "bg-slate-700/50 border border-slate-600 rounded-xl p-4 transition hover:bg-slate-700";
+                
+                card.innerHTML = `
+                    <h4 class="font-bold text-white mb-2 flex items-center border-b border-slate-600 pb-2">
+                        <i class="fas ${mit.icon} mr-2 text-slate-400"></i> ${mit.name}
+                    </h4>
+                    <div class="mt-3 text-sm space-y-2">
+                        <p><strong class="text-red-400">Vấn đề:</strong> <span class="text-slate-300">${mit.issue}</span></p>
+                        <p><strong class="text-green-400">Giải pháp:</strong> <span class="text-slate-300">${mit.solution}</span></p>
+                    </div>
+                `;
+                dpContent.appendChild(card);
+            });
+
+            // Hiển thị panel
+            detailsPanel.classList.add('show');
+            
+            // Scroll mượt xuống panel
+            setTimeout(() => {
+                detailsPanel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }, 100);
+        }
+
+        function updateUI() {
+            svgContainer.innerHTML = '';
+
+            if (!activeThreatId) {
+                threatElements.forEach(t => { t.classList.remove('dimmed', 'active-threat'); t.style.removeProperty('--glow-color'); });
+                mitigationElements.forEach(m => { m.classList.remove('dimmed', 'active-mitigation'); m.style.removeProperty('--glow-color'); });
+                
+                resetBtn.classList.remove('opacity-100', 'pointer-events-auto');
+                resetBtn.classList.add('opacity-0', 'pointer-events-none');
+                updateDetailsPanel(null);
+                return;
+            }
+
+            resetBtn.classList.remove('opacity-0', 'pointer-events-none');
+            resetBtn.classList.add('opacity-100', 'pointer-events-auto');
+
+            const activeThreatEl = document.getElementById(activeThreatId);
+            const threatData = threatsData[activeThreatId];
+            const targetMitigationIds = threatData.links;
+            const color = threatData.color;
+
+            // Cập nhật Threats
+            threatElements.forEach(t => {
+                if (t.id === activeThreatId) {
+                    t.classList.remove('dimmed');
+                    t.classList.add('active-threat');
+                    t.style.setProperty('--glow-color', color);
+                } else {
+                    t.classList.remove('active-threat');
+                    t.classList.add('dimmed');
+                }
+            });
+
+            // Cập nhật Mitigations & Vẽ đường
+            mitigationElements.forEach(m => {
+                if (targetMitigationIds.includes(m.id)) {
+                    m.classList.remove('dimmed');
+                    m.classList.add('active-mitigation');
+                    m.style.setProperty('--glow-color', color);
+                    
+                    drawConnection(activeThreatEl, m, color);
+                } else {
+                    m.classList.remove('active-mitigation');
+                    m.classList.add('dimmed');
+                }
+            });
+
+            // Cập nhật Bảng chi tiết
+            updateDetailsPanel(activeThreatId);
+        }
+
+        threatElements.forEach(threat => {
+            threat.addEventListener('click', function(e) {
+                if (activeThreatId === this.id) {
+                    activeThreatId = null; // Toggle off
+                } else {
+                    activeThreatId = this.id;
+                }
+                updateUI();
+                e.stopPropagation();
+            });
+        });
+
+        // Click outside to reset
+        document.body.addEventListener('click', (e) => {
+            if (!e.target.closest('.threat-item') && !e.target.closest('.mitigation-item') && !e.target.closest('#details-panel')) {
+                activeThreatId = null;
+                updateUI();
+            }
+        });
+
+        resetBtn.addEventListener('click', (e) => {
+            activeThreatId = null;
+            updateUI();
+            e.stopPropagation();
+        });
+
+        // Xử lý resize để vẽ lại đường nối chính xác
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (activeThreatId) {
+                    window.requestAnimationFrame(updateUI);
+                }
+            }, 100);
+        });
+
+    </script>
+</body>
+</html>
